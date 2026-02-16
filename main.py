@@ -17,80 +17,92 @@ from ulauncher.api.shared.action.ExtensionCustomAction import ExtensionCustomAct
 class WhereAmI(Extension):
     def __init__(self):
         super().__init__()
-        # Inscreve-se para escutar quando o usuário digitar a keyword
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
-        # Inscreve-se para escutar quando um item for clicado
         self.subscribe(ItemEnterEvent, ItemEnterEventListener())
 
 class KeywordQueryEventListener(EventListener):
     def on_event(self, event, extension):
-        """Chamado quando o usuário digita a palavra-chave."""
-        return [
+        # Mostra um item de carregamento; ao pressionar Enter, inicia a busca
+        data = {'query': event.get_argument() or ''}
+        return RenderResultListAction([
             ExtensionResultItem(
                 icon='images/icon.png',
                 name='Obtendo localização...',
-                description='Aguarde enquanto buscamos sua cidade.',
-                on_enter=HideWindowAction()
+                description='Pressione Enter para buscar sua cidade',
+                on_enter=ExtensionCustomAction(data, keep_app_open=True)
             )
-        ]
+        ])
 
-    def obter_e_mostrar_localizacao(self, extension):
-        """Função auxiliar para buscar a localização e criar os resultados."""
+class ItemEnterEventListener(EventListener):
+    def on_event(self, event, extension):
+        data = event.get_data()
+        # Inicia a busca em uma thread separada para não travar a interface
+        Thread(target=self._buscar_localizacao, args=(extension,)).start()
+        # Fecha a janela enquanto processa (será reaberta com os resultados)
+        return HideWindowAction()
+
+    def _buscar_localizacao(self, extension):
         try:
+            # Conecta ao Geoclue
             cliente = Geoclue.Simple.new_sync(
                 "ulauncher.whereami",
                 Geoclue.AccuracyLevel.EXACT,
                 None, None
             )
             loc = cliente.get_location()
-            if loc:
-                lat = loc.get_property('latitude')
-                lon = loc.get_property('longitude')
-                if lat and lon:
-                    # Faz a geocodificação reversa (em uma thread separada)
-                    url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
-                    headers = {'User-Agent': 'UlauncherWhereAmI/1.0'}
-                    resp = requests.get(url, headers=headers, timeout=5)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        cidade = data.get('address', {}).get('city') or \
-                                 data.get('address', {}).get('town') or \
-                                 data.get('address', {}).get('village') or \
-                                 data.get('address', {}).get('county')
-                        if cidade:
-                            return [
-                                ExtensionResultItem(
-                                    icon='images/icon.png',
-                                    name=f"📍 Você está em: {cidade}",
-                                    description="Clique para copiar o nome da cidade",
-                                    on_enter=CopyToClipboardAction(cidade)
-                                ),
-                                ExtensionResultItem(
-                                    icon='images/icon.png',
-                                    name="🌐 Abrir no Google Maps",
-                                    description="Ver localização no mapa",
-                                    on_enter=OpenAction(
-                                        f"https://www.google.com/maps?q={lat},{lon}"
-                                    )
-                                )
-                            ]
+            if not loc:
+                raise Exception("Não foi possível obter localização")
+
+            lat = loc.get_property('latitude')
+            lon = loc.get_property('longitude')
+            if not lat or not lon:
+                raise Exception("Coordenadas não disponíveis")
+
+            # Geocodificação reversa com Nominatim
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
+            headers = {'User-Agent': 'UlauncherWhereAmI/1.0'}
+            resp = requests.get(url, headers=headers, timeout=5)
+            if resp.status_code != 200:
+                raise Exception("Falha na geocodificação")
+
+            dados = resp.json()
+            cidade = (dados.get('address', {}).get('city') or
+                      dados.get('address', {}).get('town') or
+                      dados.get('address', {}).get('village') or
+                      dados.get('address', {}).get('county'))
+            if not cidade:
+                raise Exception("Cidade não encontrada nos dados")
+
+            # Prepara os resultados
+            resultados = [
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name=f"📍 Você está em: {cidade}",
+                    description="Clique para copiar o nome da cidade",
+                    on_enter=CopyToClipboardAction(cidade)
+                ),
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name="🌐 Abrir no Google Maps",
+                    description="Ver localização no mapa",
+                    on_enter=OpenAction(f"https://www.google.com/maps?q={lat},{lon}")
+                )
+            ]
+            # Atualiza a janela com os resultados (na thread principal)
+            GLib.idle_add(extension.window.show_results,
+                          RenderResultListAction(resultados))
+
         except Exception as e:
-            print(f"Erro: {e}")
-
-        # Se algo falhar, retorna uma mensagem de erro
-        return [ExtensionResultItem(
-            icon='images/icon.png',
-            name="❌ Erro ao obter localização",
-            description="Tente novamente mais tarde.",
-            on_enter=HideWindowAction()
-        )]
-
-class ItemEnterEventListener(EventListener):
-    def on_event(self, event, extension):
-        """Chamado quando um item é clicado (para ações personalizadas)."""
-        # Por enquanto, não precisamos de ações complexas, mas este listener
-        # é necessário se você quiser usar ExtensionCustomAction no futuro.
-        return HideWindowAction()
+            print(f"Erro na extensão WhereAmI: {e}")
+            GLib.idle_add(extension.window.show_results,
+                          RenderResultListAction([
+                              ExtensionResultItem(
+                                  icon='images/icon.png',
+                                  name="❌ Erro ao obter localização",
+                                  description=str(e),
+                                  on_enter=HideWindowAction()
+                              )
+                          ]))
 
 if __name__ == '__main__':
     WhereAmI().run()
