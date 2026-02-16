@@ -1,0 +1,14 @@
+{
+  "api_version": "3",
+  "authors": "Xavier",
+  "name": "Where Am I?",
+  "icon": "system-run",
+  "instructions": "Digite 'whereami' para ver sua cidade atual.",
+  "triggers": {
+    "location_trigger": {
+      "name": "Localização",
+      "description": "Mostra a cidade onde você está",
+      "keyword": "whereami"
+    }
+  }
+}
