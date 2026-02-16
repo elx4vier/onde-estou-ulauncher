@@ -1,6 +1,6 @@
 import gi
 gi.require_version('Geoclue', '2.0')
-from gi.repository import Geoclue, GLib
+from gi.repository import Geoclue, GLib, GObject
 import requests
 
 from ulauncher.api.client.Extension import Extension
@@ -21,20 +21,23 @@ class WhereAmI(Extension):
 class KeywordQueryEventListener(EventListener):
     def on_event(self, event, extension):
         try:
-            # Cria cliente Geoclue corretamente (3 argumentos)
+            # Cria cliente Geoclue
             extension.cliente = Geoclue.Simple.new_sync(
-                "io.ulauncher.Ulauncher",       # App-id aceito pelo Geoclue
-                Geoclue.AccuracyLevel.CITY,     # Suficiente para cidade/estado
-                None                            # Cancellable
+                "io.ulauncher.Ulauncher",
+                Geoclue.AccuracyLevel.CITY,
+                None
             )
 
-            # Busca localização assíncrona
-            extension.cliente.get_location_async(None, self._on_location_async_ready, extension)
+            # Conecta ao sinal de mudança de localização
+            extension.cliente.connect("notify::location", self._on_location_changed, extension)
 
-            # Timeout de 8 segundos para evitar travamento
+            # Inicia a busca
+            extension.cliente.start()
+
+            # Timeout de 8 segundos
             GLib.timeout_add_seconds(8, self._timeout, extension)
 
-            # Mostra mensagem temporária
+            # Mensagem inicial
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
@@ -54,25 +57,23 @@ class KeywordQueryEventListener(EventListener):
                 )
             ])
 
-    def _on_location_async_ready(self, source, result, extension):
-        try:
-            loc = source.get_location_finish(result)
-            if not loc:
-                self._mostrar_erro(extension, "Localização não disponível")
-                return
+    def _on_location_changed(self, cliente, pspec, extension):
+        loc = cliente.props.location
+        if not loc:
+            return
 
-            lat = loc.get_property('latitude')
-            lon = loc.get_property('longitude')
+        lat = loc.get_property('latitude')
+        lon = loc.get_property('longitude')
 
-            if lat is None or lon is None:
-                self._mostrar_erro(extension, "Coordenadas inválidas")
-                return
+        if lat is None or lon is None:
+            self._mostrar_erro(extension, "Coordenadas inválidas")
+            return
 
-            # Geocodificação reversa via Nominatim
-            self._geocode(lat, lon, extension)
+        # Para o cliente depois de obter a localização
+        cliente.stop()
 
-        except Exception as e:
-            self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
+        # Faz geocodificação reversa
+        self._geocode(lat, lon, extension)
 
     def _geocode(self, lat, lon, extension):
         try:
@@ -125,7 +126,7 @@ class KeywordQueryEventListener(EventListener):
 
     def _timeout(self, extension):
         self._mostrar_erro(extension, "Tempo esgotado ao obter localização")
-        return False  # Não repete
+        return False  # Não repetir
 
 
 if __name__ == '__main__':
