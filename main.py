@@ -20,13 +20,12 @@ class WhereAmI(Extension):
 
 class KeywordQueryEventListener(EventListener):
     def on_event(self, event, extension):
-        # Cria cliente Geoclue
         try:
+            # Cria cliente Geoclue corretamente (3 argumentos)
             extension.cliente = Geoclue.Simple.new_sync(
-                "io.ulauncher.Ulauncher",  # App-id aceito pelo Geoclue
-                Geoclue.AccuracyLevel.CITY,  # Suficiente para cidade/estado
-                None,
-                None
+                "io.ulauncher.Ulauncher",       # App-id aceito pelo Geoclue
+                Geoclue.AccuracyLevel.CITY,     # Suficiente para cidade/estado
+                None                            # Cancellable
             )
 
             # Busca localização assíncrona
@@ -35,7 +34,7 @@ class KeywordQueryEventListener(EventListener):
             # Timeout de 8 segundos para evitar travamento
             GLib.timeout_add_seconds(8, self._timeout, extension)
 
-            # Enquanto aguarda, mostra mensagem temporária
+            # Mostra mensagem temporária
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
@@ -69,7 +68,7 @@ class KeywordQueryEventListener(EventListener):
                 self._mostrar_erro(extension, "Coordenadas inválidas")
                 return
 
-            # Faz geocodificação reversa (OpenStreetMap / Nominatim)
+            # Geocodificação reversa via Nominatim
             self._geocode(lat, lon, extension)
 
         except Exception as e:
@@ -126,7 +125,7 @@ class KeywordQueryEventListener(EventListener):
 
     def _timeout(self, extension):
         self._mostrar_erro(extension, "Tempo esgotado ao obter localização")
-        return False  # Para não repetir
+        return False  # Não repete
 
 
 if __name__ == '__main__':
