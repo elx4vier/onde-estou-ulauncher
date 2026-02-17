@@ -1,6 +1,6 @@
 {
   "name": "Onde estou?",
-  "description": "Mostra sua cidade, estado e país e permite copiar",
+  "description": "Mostra sua cidade, estado e país e copia ao clique",
   "developer_name": "Xavier",
   "icon": "images/icon.png",
   "type": "python",
