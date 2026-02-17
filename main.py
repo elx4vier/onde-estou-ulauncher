@@ -7,7 +7,6 @@ from ulauncher.api.shared.event import KeywordQueryEvent
 from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
 from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
 from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction
-from ulauncher.api.shared.action.OpenAction import OpenAction
 
 # Sua chave Google
 GOOGLE_API_KEY = "AIzaSyChY5KA-9Fgzz4o-hvhny0F1YKimAFrbzo"
@@ -40,7 +39,7 @@ def extrair_cidade_estado_pais(geo_data):
     return cidade, estado, pais
 
 
-class WhereAmIGoogle(Extension):
+class OndeEstou(Extension):
     def __init__(self):
         super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
@@ -81,18 +80,13 @@ class KeywordQueryEventListener(EventListener):
                 texto += f", {estado}"
             texto += f" — {pais}"
 
+            # Apenas 1 botão: copiar
             itens = [
                 ExtensionResultItem(
                     icon="images/icon.png",
                     name=f"📍 {texto}",
                     description="Clique para copiar",
                     on_enter=CopyToClipboardAction(texto)
-                ),
-                ExtensionResultItem(
-                    icon="images/icon.png",
-                    name="🌐 Abrir no Google Maps",
-                    description="Ver localização no mapa",
-                    on_enter=OpenAction(f"https://www.google.com/maps?q={lat},{lon}")
                 )
             ]
 
@@ -117,4 +111,4 @@ class KeywordQueryEventListener(EventListener):
 
 
 if __name__ == "__main__":
-    WhereAmIGoogle().run()
+    OndeEstou().run()
