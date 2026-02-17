@@ -10,10 +10,10 @@
   "preferences": [
     {
       "id": "keyword",
-      "name": "Keyword",
-      "label": "Keyword para acionar a extensão",
+      "name": "Minha localização",
+      "label": "Digite a palavra-chave para acionar a extensão",
       "type": "keyword",
-      "default_value": "ondeestou"
+      "default_value": "local"
     }
   ],
   "launchers": ["keyword"]
