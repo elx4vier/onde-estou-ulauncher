@@ -14,7 +14,14 @@
       "label": "Keyword para acionar a extensão",
       "type": "keyword",
       "default_value": "ondeestou"
+    },
+    {
+      "id": "hotkey",
+      "name": "Hotkey",
+      "label": "Atalho de teclado para abrir a extensão",
+      "type": "input",
+      "default_value": ""
     }
   ],
-  "launchers": ["keyword"]
+  "launchers": ["keyword", "hotkey"]
 }
