@@ -1,6 +1,5 @@
 import requests
 import time
-
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
 from ulauncher.api.shared.event import KeywordQueryEvent
@@ -41,41 +40,28 @@ def country_code_to_emoji(code):
 class OndeEstouExtension(Extension):
     def __init__(self):
         super().__init__()
-        self.keyword = self.preferences.get("keyword") or "local"
         self.subscribe(KeywordQueryEvent, OndeEstouKeywordListener())
 
 class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
-        # Item fixo sempre visível
-        item_inicial = [
-            ExtensionResultItem(
-                icon=ICONE_PADRAO,
-                name="Minha localização",
-                description="Mostra sua localização atual",
-                on_enter=None
-            )
-        ]
-
-        resultados = item_inicial.copy()
-
-        # Retorna cache se válido
+        # Usa cache se ainda for válido
         if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
-            resultados += _last_location
-            return RenderResultListAction(resultados)
+            return RenderResultListAction(_last_location)
 
-        # Busca localização
         try:
+            # Obtém coordenadas via geolocalização por IP
             url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
             resp = requests.post(url_geo, json={"considerIp": True}, timeout=5)
             resp.raise_for_status()
             loc = resp.json().get("location")
             if not loc:
-                return self._mostrar_erro("Não foi possível obter lat/lon")
+                return self._mostrar_erro("Não foi possível obter latitude/longitude")
 
             lat, lon = loc.get("lat"), loc.get("lng")
 
+            # Geocoding reverso para endereço
             url_rev = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
             resp = requests.get(url_rev, timeout=5)
             resp.raise_for_status()
@@ -87,21 +73,22 @@ class OndeEstouKeywordListener(EventListener):
 
             bandeira = country_code_to_emoji(codigo_pais)
             descricao = f"{estado}, {pais} {bandeira}" if estado else f"{pais} {bandeira}"
+            texto_completo = f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}"
 
             itens = [
                 ExtensionResultItem(
                     icon=ICONE_PADRAO,
-                    name=f"{cidade}",
+                    name=cidade,
                     description=descricao,
-                    on_enter=CopyToClipboardAction(f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}")
+                    on_enter=CopyToClipboardAction(texto_completo)
                 )
             ]
 
+            # Atualiza cache
             _last_location = itens
             _last_timestamp = time.time()
 
-            resultados += itens
-            return RenderResultListAction(resultados)
+            return RenderResultListAction(itens)
 
         except Exception as e:
             return self._mostrar_erro(f"Erro ao obter localização: {e}")
@@ -115,7 +102,6 @@ class OndeEstouKeywordListener(EventListener):
                 on_enter=None
             )
         ])
-
 
 if __name__ == "__main__":
     OndeEstouExtension().run()
