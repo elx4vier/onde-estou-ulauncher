@@ -17,7 +17,6 @@ CACHE_TIMEOUT = 600  # 10 minutos
 ICONE_PADRAO = "images/icon.svg"
 ICONE_LOADING = "images/loading.svg"
 ICONE_ERRO = "images/error.svg"
-ICONE_ALERTA = "images/alert.svg"
 
 _last_location = None
 _last_timestamp = 0
@@ -80,24 +79,37 @@ class OndeEstouKeywordListener(EventListener):
         global _last_location, _last_timestamp
         try:
             # Google Geolocation API
-            url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
-            resp = requests.post(url_geo, json={"considerIp": True}, timeout=5)
-            resp.raise_for_status()
-            loc = resp.json().get("location")
-            if not loc:
-                self._mostrar_erro(extension, "Não foi possível obter lat/lon")
+            try:
+                resp = requests.post(
+                    f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}",
+                    json={"considerIp": True},
+                    timeout=10
+                )
+                resp.raise_for_status()
+                loc = resp.json().get("location")
+                if not loc:
+                    raise ValueError("Lat/Lon não retornado pela API")
+            except Exception as e:
+                GLib.idle_add(lambda: self._mostrar_erro(extension, f"Erro Geolocation: {e}"))
                 return
+
             lat, lon = loc.get("lat"), loc.get("lng")
 
             # Google Geocoding API
-            url_rev = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
-            resp = requests.get(url_rev, timeout=5)
-            resp.raise_for_status()
-            geo_data_rev = resp.json()
+            try:
+                resp = requests.get(
+                    f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}",
+                    timeout=10
+                )
+                resp.raise_for_status()
+                geo_data_rev = resp.json()
+            except Exception as e:
+                GLib.idle_add(lambda: self._mostrar_erro(extension, f"Erro Geocoding: {e}"))
+                return
 
             cidade, estado, pais, codigo_pais = extrair_cidade_estado_pais(geo_data_rev)
             if not cidade or not pais:
-                self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
+                GLib.idle_add(lambda: self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país"))
                 return
 
             bandeira = country_code_to_emoji(codigo_pais)
@@ -117,7 +129,7 @@ class OndeEstouKeywordListener(EventListener):
             GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(itens)))
 
         except Exception as e:
-            self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
+            GLib.idle_add(lambda: self._mostrar_erro(extension, f"Erro inesperado: {e}"))
 
     def _mostrar_erro(self, extension, mensagem):
         item = [
@@ -129,6 +141,7 @@ class OndeEstouKeywordListener(EventListener):
             )
         ]
         GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(item)))
+
 
 if __name__ == "__main__":
     OndeEstouExtension().run()
