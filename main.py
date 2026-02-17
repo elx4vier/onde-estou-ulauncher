@@ -2,6 +2,8 @@ import logging
 import requests
 import threading
 import time
+import os
+import tempfile
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
@@ -14,7 +16,6 @@ from ulauncher.api.shared.action.HideWindowAction import HideWindowAction
 logger = logging.getLogger(__name__)
 
 CACHE_TEMPO = 300
-OPENWEATHER_KEY = "4e984b8d646f78243e905469f3ebd800"
 
 
 class OndeEstouExtension(Extension):
@@ -42,8 +43,8 @@ class KeywordQueryEventListener(EventListener):
         return RenderResultListAction([
             ExtensionResultItem(
                 icon='map-marker',
-                name="Carregando informações...",
-                description="Aguarde um instante",
+                name="Carregando...",
+                description="Buscando informações do município",
                 on_enter=HideWindowAction()
             )
         ])
@@ -51,20 +52,14 @@ class KeywordQueryEventListener(EventListener):
     def buscar_dados(self, extension):
 
         try:
-            # 🌍 Localização + ISP
+            # 🌍 Localização
             geo = requests.get("https://ipapi.co/json/", timeout=3).json()
 
-            cidade = geo.get("city", "Desconhecida")
+            cidade = geo.get("city", "")
             estado = geo.get("region", "")
-            pais = geo.get("country_name", "")
             country_code = geo.get("country_code", "").upper()
-            ip = geo.get("ip", "")
-            isp = geo.get("org", "Desconhecido")
-            timezone = geo.get("timezone", "")
-            lat = geo.get("latitude")
-            lon = geo.get("longitude")
 
-            # 🇧🇷 Bandeira dinâmica
+            # 🇧🇷 Bandeira
             def flag(code):
                 if len(code) != 2:
                     return ""
@@ -72,50 +67,62 @@ class KeywordQueryEventListener(EventListener):
 
             bandeira = flag(country_code)
 
-            # 🌦 Clima
-            clima = "N/D"
-            if lat and lon:
-                try:
-                    weather = requests.get(
-                        f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units=metric&appid={OPENWEATHER_KEY}",
-                        timeout=3
-                    ).json()
+            # 📖 Wikipédia resumo
+            resumo = ""
+            imagem_path = 'map-marker'
 
-                    temp = round(weather["main"]["temp"])
-                    cond = weather["weather"][0]["main"]
+            try:
+                wiki = requests.get(
+                    f"https://pt.wikipedia.org/api/rest_v1/page/summary/{cidade}",
+                    timeout=3
+                ).json()
 
-                    emoji_map = {
-                        "Clear": "☀️",
-                        "Clouds": "☁️",
-                        "Rain": "🌧",
-                        "Thunderstorm": "⛈",
-                        "Drizzle": "🌦",
-                        "Snow": "❄️",
-                        "Mist": "🌫"
-                    }
+                resumo = wiki.get("extract", "")
 
-                    emoji = emoji_map.get(cond, "")
-                    clima = f"{temp}°C {emoji}"
-                except:
-                    pass
+                # Baixa imagem se existir
+                if "thumbnail" in wiki:
+                    img_url = wiki["thumbnail"]["source"]
+                    img_data = requests.get(img_url).content
+
+                    tmp_file = os.path.join(
+                        tempfile.gettempdir(),
+                        f"{cidade}.jpg"
+                    )
+
+                    with open(tmp_file, "wb") as f:
+                        f.write(img_data)
+
+                    imagem_path = tmp_file
+
+            except:
+                resumo = "Resumo não disponível."
+
+            # 📝 Montagem visual
+
+            titulo = "Você está em:\n"
+            linha_cidade = f"{cidade}\n"
+
+            linha_estado = ""
+            if estado:
+                linha_estado = f"{estado}\n"
+
+            linha_pais = f"{country_code} {bandeira}"
 
             texto = (
-                "Você está em:\n\n"
-                f"{cidade}\n"
-                f"{estado}\n"
-                f"{pais} {bandeira}\n\n"
-                f"Fuso: {timezone}\n"
-                f"Clima: {clima}\n\n"
-                f"ISP: {isp}\n"
-                f"IP: {ip}"
+                f"{titulo}\n"
+                f"{linha_cidade}"
+                f"{linha_estado}"
+                f"{linha_pais}\n\n"
+                f"{resumo}\n\n"
+                f"Fontes: ipapi.co • Wikipédia"
             )
 
             items = [
                 ExtensionResultItem(
-                    icon='map-marker',
+                    icon=imagem_path,
                     name=texto,
-                    description="Dados: ipapi.co • OpenWeather",
-                    on_enter=CopyToClipboardAction(f"{cidade}, {estado}, {pais}")
+                    description="",
+                    on_enter=CopyToClipboardAction(f"{cidade}, {estado}, {country_code}")
                 )
             ]
 
