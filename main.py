@@ -1,7 +1,5 @@
 import logging
 import requests
-import os
-import tempfile
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
@@ -24,12 +22,16 @@ class KeywordQueryEventListener(EventListener):
     def on_event(self, event, extension):
 
         try:
-            # 🌍 Localização
             geo = requests.get("https://ipapi.co/json/", timeout=4).json()
 
             cidade = geo.get("city", "")
             estado = geo.get("region", "")
             country_code = geo.get("country_code", "").upper()
+
+            # 🔧 Configurações do usuário
+            mostrar_estado = extension.preferences.get("mostrar_estado", "sim")
+            mostrar_bandeira = extension.preferences.get("mostrar_bandeira", "sim")
+            copiar_formato = extension.preferences.get("formato_copia", "cidade_estado_pais")
 
             # 🇧🇷 Bandeira dinâmica
             def flag(code):
@@ -37,50 +39,38 @@ class KeywordQueryEventListener(EventListener):
                     return ""
                 return chr(ord(code[0]) + 127397) + chr(ord(code[1]) + 127397)
 
-            bandeira = flag(country_code)
+            bandeira = flag(country_code) if mostrar_bandeira == "sim" else ""
 
-            # 🖼 Buscar imagem da cidade
-            icon_path = 'map-marker'
+            linha_estado = ""
+            if estado and mostrar_estado == "sim":
+                linha_estado = f"{estado}\n"
 
-            try:
-                wiki = requests.get(
-                    f"https://pt.wikipedia.org/api/rest_v1/page/summary/{cidade}",
-                    timeout=4
-                ).json()
-
-                if "thumbnail" in wiki:
-                    img_url = wiki["thumbnail"]["source"]
-                    img_data = requests.get(img_url, timeout=4).content
-
-                    tmp_dir = tempfile.gettempdir()
-                    icon_path = os.path.join(tmp_dir, "cidade.png")
-
-                    with open(icon_path, "wb") as f:
-                        f.write(img_data)
-
-            except Exception:
-                pass  # se falhar, usa ícone padrão
-
-            # 📝 Montagem visual
             titulo = "Você está em:\n"
-
-            linha_estado = f"{estado}\n" if estado else ""
 
             texto = (
                 f"{titulo}\n"
                 f"{cidade}\n"
                 f"{linha_estado}"
                 f"{country_code} {bandeira}"
+                f"\n\n"  # 👈 Espaçamento antes das fontes
             )
 
-            rodape = "Fontes: ipapi.co • Wikimedia"
+            rodape = "Fontes: ipapi.co"
+
+            # 📋 Formato de cópia configurável
+            if copiar_formato == "cidade":
+                copia = cidade
+            elif copiar_formato == "cidade_pais":
+                copia = f"{cidade}, {country_code}"
+            else:
+                copia = f"{cidade}, {estado}, {country_code}"
 
             return RenderResultListAction([
                 ExtensionResultItem(
-                    icon=icon_path,
+                    icon='map-marker',
                     name=texto,
                     description=rodape,
-                    on_enter=CopyToClipboardAction(f"{cidade}, {estado}, {country_code}")
+                    on_enter=CopyToClipboardAction(copia)
                 )
             ])
 
