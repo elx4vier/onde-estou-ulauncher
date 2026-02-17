@@ -1,46 +1,20 @@
 {
-  "required_api_version": "^2.0.0",
-  "name": "Onde estou?",
-  "description": "Mostra sua cidade, estado e país e permite copiar",
-  "developer_name": "Xavier",
-  "icon": "images/icon.png",
-  "options": {
-    "query_debounce": 0.1
-  },
-  "preferences": [
-    {
-      "id": "onde_keyword",
-      "type": "keyword",
-      "name": "Palavra‑chave",
-      "description": "Digite a palavra‑chave para acionar a extensão",
-      "default_value": "onde"
+    "manifest_version": "1",
+    "api_version": "1",
+    "name": "Onde Estou",
+    "description": "Mostra sua localização atual baseada no IP (cidade, estado e país)",
+    "developer_name": "Seu Nome",
+    "icon": "images/icon.png",
+    "options": {
+        "query_debounce": 0.1
     },
-    {
-      "id": "google_api_key",
-      "type": "input",
-      "name": "Chave API Google",
-      "description": "Digite sua chave pessoal da Google Geocoding API (obtenha em https://developers.google.com/maps/documentation/geocoding/start)",
-      "default_value": "AIzaSyChY5KA-9Fgzz4o-hvhny0F1YKimAFrbzo"
-    },
-    {
-      "id": "formato_exibicao",
-      "type": "select",
-      "name": "Formato de exibição",
-      "default_value": "completo",
-      "options": [
-        { "value": "completo", "text": "Cidade, Estado — País (sigla)" },
-        { "value": "simples", "text": "Cidade — País (sigla)" },
-        { "value": "cidade_pais_nome", "text": "Cidade, País (nome completo)" },
-        { "value": "cidade_estado_pais_nome", "text": "Cidade, Estado, País (nome completo)" },
-        { "value": "cidade_sigla_bandeira", "text": "Cidade (sigla do país) + bandeira" }
-      ]
-    },
-    {
-      "id": "language",
-      "type": "text",
-      "name": "Idioma",
-      "description": "Idioma dos nomes (consulte códigos suportados: https://developers.google.com/maps/faq#languagesupport)",
-      "default_value": "pt-BR"
-    }
-  ]
+    "preferences": [
+        {
+            "id": "kw",
+            "type": "keyword",
+            "name": "Palavra-chave",
+            "description": "Digite a palavra-chave para ativar a extensão",
+            "default_value": "onde"
+        }
+    ]
 }
