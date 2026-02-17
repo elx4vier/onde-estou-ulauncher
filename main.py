@@ -14,8 +14,11 @@ _last_location = None
 _last_timestamp = 0
 CACHE_TIMEOUT = 600  # 10 minutos
 
+ICONE_PADRAO = "images/icon.png"
+ICONE_ERRO = "images/error.png"
+
 def extrair_cidade_estado_pais(geo_data):
-    cidade = estado = pais = None
+    cidade = estado = pais = codigo_pais = None
     for result in geo_data.get("results", []):
         for comp in result.get("address_components", []):
             types = comp.get("types", [])
@@ -25,9 +28,15 @@ def extrair_cidade_estado_pais(geo_data):
                 estado = comp.get("long_name")
             if not pais and "country" in types:
                 pais = comp.get("long_name")
+                codigo_pais = comp.get("short_name")
         if cidade and estado and pais:
             break
-    return cidade, estado, pais
+    return cidade, estado, pais, codigo_pais
+
+def country_code_to_emoji(code):
+    if not code or len(code) != 2:
+        return ""
+    return chr(ord(code[0].upper()) + 127397) + chr(ord(code[1].upper()) + 127397)
 
 class OndeEstouExtension(Extension):
     def __init__(self):
@@ -42,12 +51,22 @@ class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
+        # Item fixo como atalho
+        item_inicial = [
+            ExtensionResultItem(
+                icon=ICONE_PADRAO,
+                name="Onde eu estou?",
+                description="Mostra sua localização atual",
+                on_enter=None
+            )
+        ]
+
         # Retorna cache se válido
         if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
             return RenderResultListAction(_last_location)
 
+        # Busca localização
         try:
-            # Google Geolocation API
             url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
             resp = requests.post(url_geo, json={"considerIp": True}, timeout=5)
             resp.raise_for_status()
@@ -56,26 +75,22 @@ class OndeEstouKeywordListener(EventListener):
                 return self._mostrar_erro(extension, "Não foi possível obter lat/lon")
             lat, lon = loc.get("lat"), loc.get("lng")
 
-            # Google Geocoding API
             url_rev = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
             resp = requests.get(url_rev, timeout=5)
             resp.raise_for_status()
             geo_data_rev = resp.json()
 
-            cidade, estado, pais = extrair_cidade_estado_pais(geo_data_rev)
+            cidade, estado, pais, codigo_pais = extrair_cidade_estado_pais(geo_data_rev)
             if not cidade or not pais:
                 return self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
 
-            # Formata visualmente
-            if estado:
-                descricao = f"{estado}, {pais}"
-            else:
-                descricao = f"{pais}"
+            bandeira = country_code_to_emoji(codigo_pais)
+            descricao = f"{estado}, {pais} {bandeira}" if estado else f"{pais} {bandeira}"
 
             itens = [
                 ExtensionResultItem(
-                    icon="images/icon.png",
-                    name=f"📍 {cidade}",
+                    icon=ICONE_PADRAO,
+                    name=f"{cidade}",
                     description=descricao,
                     on_enter=CopyToClipboardAction(f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}")
                 )
@@ -83,7 +98,9 @@ class OndeEstouKeywordListener(EventListener):
 
             _last_location = itens
             _last_timestamp = time.time()
-            return RenderResultListAction(itens)
+
+            # Retorna item fixo + resultado da localização
+            return RenderResultListAction(item_inicial + itens)
 
         except Exception as e:
             return self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
@@ -91,7 +108,7 @@ class OndeEstouKeywordListener(EventListener):
     def _mostrar_erro(self, extension, mensagem):
         return RenderResultListAction([
             ExtensionResultItem(
-                icon="images/error.png",
+                icon=ICONE_ERRO,
                 name="❌ Erro ao obter localização",
                 description=mensagem,
                 on_enter=None
