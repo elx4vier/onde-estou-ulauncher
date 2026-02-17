@@ -4,7 +4,6 @@ import time
 import json
 import os
 import threading
-import uuid
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -37,12 +36,11 @@ class OndeEstouExtension(Extension):
         super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
         self.session = create_session()
-        self.cache = None
-        self.cache_time = 0
         self.base_path = os.path.dirname(os.path.abspath(__file__))
 
-        # 🔥 Controle de concorrência
-        self.current_request_id = None
+        self.cached_result = None
+        self.last_fetch = 0
+        self.fetching = False
         self.lock = threading.Lock()
 
     def icon(self, filename):
@@ -54,39 +52,38 @@ class KeywordQueryEventListener(EventListener):
 
     def on_event(self, event, extension):
 
-        # 🔐 Gera novo ID de requisição
-        request_id = str(uuid.uuid4())
+        now = time.time()
 
+        # ✅ Se já tem cache válido → retorna instantâneo
+        if extension.cached_result and (now - extension.last_fetch < CACHE_TTL):
+            return RenderResultListAction([extension.cached_result])
+
+        # 🚀 Se não está buscando ainda → inicia thread
         with extension.lock:
-            extension.current_request_id = request_id
+            if not extension.fetching:
+                extension.fetching = True
+                threading.Thread(
+                    target=self.background_fetch,
+                    args=(extension,),
+                    daemon=True
+                ).start()
 
-        # 🚀 Thread única controlada
-        thread = threading.Thread(
-            target=self.background_fetch,
-            args=(extension, request_id),
-            daemon=True
-        )
-        thread.start()
-
+        # 🔄 Mostra loading temporário
         return RenderResultListAction([
             ExtensionResultItem(
                 icon=extension.icon("loading.png"),
                 name="Obtendo localização...",
-                description="Consultando serviço..."
+                description="Aguarde alguns instantes..."
             )
         ])
 
     # ----------------------------------
-    # 🔄 THREAD CONTROLADA
+    # THREAD SEGURA
     # ----------------------------------
-    def background_fetch(self, extension, request_id):
+    def background_fetch(self, extension):
 
         try:
             geo = self.fetch_location(extension)
-
-            # ❌ Se não for mais a requisição ativa → cancela silenciosamente
-            if not self.is_active(extension, request_id):
-                return
 
             cidade = geo.get("city", "Desconhecida")
             estado = geo.get("region", "")
@@ -110,70 +107,35 @@ class KeywordQueryEventListener(EventListener):
                 on_enter=CopyToClipboardAction(f"{cidade}, {estado}, {pais}")
             )
 
-        except Exception as e:
+            extension.cached_result = item
+            extension.last_fetch = time.time()
 
-            if not self.is_active(extension, request_id):
-                return
+        except Exception as e:
 
             logger.error(f"Erro async: {e}")
 
-            item = ExtensionResultItem(
+            extension.cached_result = ExtensionResultItem(
                 icon=extension.icon("error.png"),
                 name="Erro ao obter localização",
                 description="Offline ou serviço indisponível",
                 on_enter=CopyToClipboardAction("Erro")
             )
 
-        # 🔁 Só atualiza se ainda for ativo
-        if self.is_active(extension, request_id):
-            extension._emit(RenderResultListAction([item]))
+        finally:
+            with extension.lock:
+                extension.fetching = False
 
     # ----------------------------------
-    # 🔐 Verifica se ainda é requisição válida
-    # ----------------------------------
-    def is_active(self, extension, request_id):
-        with extension.lock:
-            return extension.current_request_id == request_id
-
-    # ----------------------------------
-    # 🌍 Busca com cache
+    # Busca API
     # ----------------------------------
     def fetch_location(self, extension):
 
-        now = time.time()
-
-        if extension.cache and (now - extension.cache_time < CACHE_TTL):
-            return extension.cache
-
-        if os.path.exists(CACHE_FILE):
-            try:
-                with open(CACHE_FILE, "r") as f:
-                    data = json.load(f)
-                    if now - data["timestamp"] < CACHE_TTL:
-                        extension.cache = data["geo"]
-                        extension.cache_time = now
-                        return data["geo"]
-            except Exception:
-                pass
-
         try:
             r = extension.session.get("https://ipapi.co/json/", timeout=2)
-            geo = r.json()
+            return r.json()
         except Exception:
             r = extension.session.get("http://ip-api.com/json/", timeout=2)
-            geo = r.json()
-
-        extension.cache = geo
-        extension.cache_time = now
-
-        try:
-            os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-            with open(CACHE_FILE, "w") as f:
-                json.dump({"timestamp": now, "geo": geo}, f)
-        except Exception:
-            pass
-
-        return geo
+            return r.json()
 
     def flag(self, code):
         if len(code) != 2:
