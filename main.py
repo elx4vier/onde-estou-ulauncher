@@ -51,25 +51,22 @@ class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
-        query = event.get_argument() or ""
-
-        # Se ainda não digitou nada, mostra apenas o atalho
-        if not query.strip():
-            return RenderResultListAction([
-                ExtensionResultItem(
-                    icon=ICONE_PADRAO,
-                    name="Onde eu estou?",
-                    description="Mostra sua localização atual",
-                    on_enter=None
-                )
-            ])
+        # Item fixo como atalho
+        item_inicial = [
+            ExtensionResultItem(
+                icon=ICONE_PADRAO,
+                name="Onde eu estou?",
+                description="Mostra sua localização atual",
+                on_enter=None
+            )
+        ]
 
         # Retorna cache se válido
         if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
             return RenderResultListAction(_last_location)
 
+        # Busca localização
         try:
-            # Google Geolocation API
             url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
             resp = requests.post(url_geo, json={"considerIp": True}, timeout=5)
             resp.raise_for_status()
@@ -78,7 +75,6 @@ class OndeEstouKeywordListener(EventListener):
                 return self._mostrar_erro(extension, "Não foi possível obter lat/lon")
             lat, lon = loc.get("lat"), loc.get("lng")
 
-            # Google Geocoding API
             url_rev = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
             resp = requests.get(url_rev, timeout=5)
             resp.raise_for_status()
@@ -89,16 +85,13 @@ class OndeEstouKeywordListener(EventListener):
                 return self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
 
             bandeira = country_code_to_emoji(codigo_pais)
-
-            # Formatação: cidade em negrito, estado/pais em itálico, bandeira ao lado do país
-            nome_formatado = f"**{cidade}**"
-            descricao_formatada = f"*{estado}, {pais}* {bandeira}" if estado else f"*{pais}* {bandeira}"
+            descricao = f"{estado}, {pais} {bandeira}" if estado else f"{pais} {bandeira}"
 
             itens = [
                 ExtensionResultItem(
                     icon=ICONE_PADRAO,
-                    name=nome_formatado,
-                    description=descricao_formatada,
+                    name=f"{cidade}",
+                    description=descricao,
                     on_enter=CopyToClipboardAction(f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}")
                 )
             ]
@@ -106,7 +99,8 @@ class OndeEstouKeywordListener(EventListener):
             _last_location = itens
             _last_timestamp = time.time()
 
-            return RenderResultListAction(itens)
+            # Retorna item fixo + resultado da localização
+            return RenderResultListAction(item_inicial + itens)
 
         except Exception as e:
             return self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
