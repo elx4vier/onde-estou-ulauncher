@@ -1,6 +1,6 @@
 {
   "name": "Onde estou?",
-  "description": "Mostra sua cidade, estado e país e copia ao clique",
+  "description": "Mostra sua cidade, estado e país e permite copiar",
   "developer_name": "Xavier",
   "icon": "images/icon.png",
   "type": "python",
@@ -14,14 +14,7 @@
       "label": "Keyword para acionar a extensão",
       "type": "keyword",
       "default_value": "ondeestou"
-    },
-    {
-      "id": "hotkey",
-      "name": "Hotkey",
-      "label": "Atalho de teclado para abrir a extensão",
-      "type": "input",
-      "default_value": ""
     }
   ],
-  "launchers": ["keyword", "hotkey"]
+  "launchers": ["keyword"]
 }
