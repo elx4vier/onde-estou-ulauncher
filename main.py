@@ -1,5 +1,6 @@
 import requests
 import time
+from threading import Thread
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
@@ -7,12 +8,13 @@ from ulauncher.api.shared.event import KeywordQueryEvent
 from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
 from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
 from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction
+from gi.repository import GLib
 
 GOOGLE_API_KEY = "AIzaSyChY5KA-9Fgzz4o-hvhny0F1YKimAFrbzo"
+CACHE_TIMEOUT = 600  # 10 minutos
 
 _last_location = None
 _last_timestamp = 0
-CACHE_TIMEOUT = 600  # 10 minutos
 
 def extrair_cidade_estado_pais(geo_data):
     cidade = estado = pais = codigo_pais = None
@@ -31,7 +33,6 @@ def extrair_cidade_estado_pais(geo_data):
     return cidade, estado, pais, codigo_pais
 
 def country_code_to_emoji(code):
-    """Converte código de país (ex: BR) em emoji de bandeira 🇧🇷"""
     if not code or len(code) != 2:
         return ""
     return chr(ord(code[0].upper()) + 127397) + chr(ord(code[1].upper()) + 127397)
@@ -49,10 +50,28 @@ class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
-        # Usa cache se válido
-        if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
-            return RenderResultListAction(_last_location)
+        # Mostra placeholder imediato
+        placeholder = [
+            ExtensionResultItem(
+                icon="images/icon.png",
+                name="📍 Obtendo localização...",
+                description="Aguarde",
+                on_enter=None
+            )
+        ]
+        GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(placeholder)))
 
+        # Se tiver cache válido, já retorna depois
+        if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
+            GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(_last_location)))
+            return
+
+        # Thread para buscar localização sem travar o Ulauncher
+        Thread(target=self._buscar_localizacao, args=(extension,)).start()
+        return
+
+    def _buscar_localizacao(self, extension):
+        global _last_location, _last_timestamp
         try:
             # Google Geolocation API
             url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
@@ -60,7 +79,8 @@ class OndeEstouKeywordListener(EventListener):
             resp.raise_for_status()
             loc = resp.json().get("location")
             if not loc:
-                return self._mostrar_erro(extension, "Não foi possível obter lat/lon")
+                self._mostrar_erro(extension, "Não foi possível obter lat/lon")
+                return
             lat, lon = loc.get("lat"), loc.get("lng")
 
             # Google Geocoding API
@@ -71,7 +91,8 @@ class OndeEstouKeywordListener(EventListener):
 
             cidade, estado, pais, codigo_pais = extrair_cidade_estado_pais(geo_data_rev)
             if not cidade or not pais:
-                return self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
+                self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
+                return
 
             bandeira = country_code_to_emoji(codigo_pais)
 
@@ -86,20 +107,22 @@ class OndeEstouKeywordListener(EventListener):
 
             _last_location = itens
             _last_timestamp = time.time()
-            return RenderResultListAction(itens)
+
+            GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(itens)))
 
         except Exception as e:
-            return self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
+            self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
 
     def _mostrar_erro(self, extension, mensagem):
-        return RenderResultListAction([
+        item = [
             ExtensionResultItem(
                 icon="images/icon.png",
                 name="❌ Erro ao obter localização",
                 description=mensagem,
                 on_enter=None
             )
-        ])
+        ]
+        GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(item)))
 
 
 if __name__ == "__main__":
