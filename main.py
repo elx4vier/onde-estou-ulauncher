@@ -42,7 +42,7 @@ class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
-        # Retorna cache se válido
+        # Usa cache se válido
         if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
             return RenderResultListAction(_last_location)
 
@@ -66,16 +66,11 @@ class OndeEstouKeywordListener(EventListener):
             if not cidade or not pais:
                 return self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
 
-            texto = f"{cidade}"
-            if estado:
-                texto += f", {estado}"
-            texto += f" — {pais}"
-
             itens = [
                 ExtensionResultItem(
                     icon="images/icon.png",
-                    name=f"📍 {texto}",
-                    description="Clique para copiar",
+                    name=f"📍 {cidade}",
+                    description=f"{estado}, {pais}" if estado else f"{pais}",
                     on_enter=CopyToClipboardAction(f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}")
                 )
             ]
