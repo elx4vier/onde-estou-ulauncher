@@ -13,6 +13,12 @@ from gi.repository import GLib
 GOOGLE_API_KEY = "AIzaSyChY5KA-9Fgzz4o-hvhny0F1YKimAFrbzo"
 CACHE_TIMEOUT = 600  # 10 minutos
 
+# Ícones SVG
+ICONE_PADRAO = "images/icon.svg"
+ICONE_LOADING = "images/loading.svg"
+ICONE_ERRO = "images/error.svg"
+ICONE_ALERTA = "images/alert.svg"
+
 _last_location = None
 _last_timestamp = 0
 
@@ -50,10 +56,10 @@ class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
-        # Mostra placeholder imediato
+        # Placeholder imediato
         placeholder = [
             ExtensionResultItem(
-                icon="images/icon.png",
+                icon=ICONE_LOADING,
                 name="📍 Obtendo localização...",
                 description="Aguarde",
                 on_enter=None
@@ -61,12 +67,12 @@ class OndeEstouKeywordListener(EventListener):
         ]
         GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(placeholder)))
 
-        # Se tiver cache válido, já retorna depois
+        # Se tiver cache válido
         if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
             GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(_last_location)))
             return
 
-        # Thread para buscar localização sem travar o Ulauncher
+        # Thread para buscar localização
         Thread(target=self._buscar_localizacao, args=(extension,)).start()
         return
 
@@ -98,7 +104,7 @@ class OndeEstouKeywordListener(EventListener):
 
             itens = [
                 ExtensionResultItem(
-                    icon="images/icon.png",
+                    icon=ICONE_PADRAO,
                     name=f"📍 {cidade}",
                     description=f"{estado}, {pais} {bandeira}" if estado else f"{pais} {bandeira}",
                     on_enter=CopyToClipboardAction(f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}")
@@ -116,14 +122,13 @@ class OndeEstouKeywordListener(EventListener):
     def _mostrar_erro(self, extension, mensagem):
         item = [
             ExtensionResultItem(
-                icon="images/icon.png",
+                icon=ICONE_ERRO,
                 name="❌ Erro ao obter localização",
                 description=mensagem,
                 on_enter=None
             )
         ]
         GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(item)))
-
 
 if __name__ == "__main__":
     OndeEstouExtension().run()
