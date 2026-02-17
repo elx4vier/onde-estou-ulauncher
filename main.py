@@ -1,6 +1,5 @@
 import requests
 import time
-from threading import Thread
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
@@ -8,22 +7,15 @@ from ulauncher.api.shared.event import KeywordQueryEvent
 from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
 from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
 from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction
-from gi.repository import GLib
 
 GOOGLE_API_KEY = "AIzaSyChY5KA-9Fgzz4o-hvhny0F1YKimAFrbzo"
-CACHE_TIMEOUT = 600  # 10 minutos
-
-# Ícones PNG
-ICONE_PADRAO = "images/icon.png"
-ICONE_LOADING = "images/loading.png"
-ICONE_ERRO = "images/error.png"
-ICONE_ALERTA = "images/alert.png"  # opcional
 
 _last_location = None
 _last_timestamp = 0
+CACHE_TIMEOUT = 600  # 10 minutos
 
 def extrair_cidade_estado_pais(geo_data):
-    cidade = estado = pais = codigo_pais = None
+    cidade = estado = pais = None
     for result in geo_data.get("results", []):
         for comp in result.get("address_components", []):
             types = comp.get("types", [])
@@ -33,15 +25,9 @@ def extrair_cidade_estado_pais(geo_data):
                 estado = comp.get("long_name")
             if not pais and "country" in types:
                 pais = comp.get("long_name")
-                codigo_pais = comp.get("short_name")  # Ex: "BR"
         if cidade and estado and pais:
             break
-    return cidade, estado, pais, codigo_pais
-
-def country_code_to_emoji(code):
-    if not code or len(code) != 2:
-        return ""
-    return chr(ord(code[0].upper()) + 127397) + chr(ord(code[1].upper()) + 127397)
+    return cidade, estado, pais
 
 class OndeEstouExtension(Extension):
     def __init__(self):
@@ -56,92 +42,61 @@ class OndeEstouKeywordListener(EventListener):
     def on_event(self, event, extension):
         global _last_location, _last_timestamp
 
-        # Placeholder imediato
-        placeholder = [
-            ExtensionResultItem(
-                icon=ICONE_LOADING,
-                name="📍 Obtendo localização...",
-                description="Aguarde",
-                on_enter=None
-            )
-        ]
-        GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(placeholder)))
-
-        # Se tiver cache válido
+        # Retorna cache se válido
         if _last_location and (time.time() - _last_timestamp) < CACHE_TIMEOUT:
-            GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(_last_location)))
-            return
+            return RenderResultListAction(_last_location)
 
-        # Thread para buscar localização
-        Thread(target=self._buscar_localizacao, args=(extension,)).start()
-        return
-
-    def _buscar_localizacao(self, extension):
-        global _last_location, _last_timestamp
         try:
             # Google Geolocation API
-            try:
-                resp = requests.post(
-                    f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}",
-                    json={"considerIp": True},
-                    timeout=10
-                )
-                resp.raise_for_status()
-                loc = resp.json().get("location")
-                if not loc:
-                    raise ValueError("Lat/Lon não retornado pela API")
-            except Exception as e:
-                GLib.idle_add(lambda: self._mostrar_erro(extension, f"Erro Geolocation: {e}"))
-                return
-
+            url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
+            resp = requests.post(url_geo, json={"considerIp": True}, timeout=5)
+            resp.raise_for_status()
+            loc = resp.json().get("location")
+            if not loc:
+                return self._mostrar_erro(extension, "Não foi possível obter lat/lon")
             lat, lon = loc.get("lat"), loc.get("lng")
 
             # Google Geocoding API
-            try:
-                resp = requests.get(
-                    f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}",
-                    timeout=10
-                )
-                resp.raise_for_status()
-                geo_data_rev = resp.json()
-            except Exception as e:
-                GLib.idle_add(lambda: self._mostrar_erro(extension, f"Erro Geocoding: {e}"))
-                return
+            url_rev = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
+            resp = requests.get(url_rev, timeout=5)
+            resp.raise_for_status()
+            geo_data_rev = resp.json()
 
-            cidade, estado, pais, codigo_pais = extrair_cidade_estado_pais(geo_data_rev)
+            cidade, estado, pais = extrair_cidade_estado_pais(geo_data_rev)
             if not cidade or not pais:
-                GLib.idle_add(lambda: self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país"))
-                return
+                return self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
 
-            bandeira = country_code_to_emoji(codigo_pais)
+            # Formata visualmente
+            if estado:
+                descricao = f"{estado}, {pais}"
+            else:
+                descricao = f"{pais}"
 
             itens = [
                 ExtensionResultItem(
-                    icon=ICONE_PADRAO,
+                    icon="images/icon.png",
                     name=f"📍 {cidade}",
-                    description=f"{estado}, {pais} {bandeira}" if estado else f"{pais} {bandeira}",
+                    description=descricao,
                     on_enter=CopyToClipboardAction(f"{cidade}, {estado} — {pais}" if estado else f"{cidade} — {pais}")
                 )
             ]
 
             _last_location = itens
             _last_timestamp = time.time()
-
-            GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(itens)))
+            return RenderResultListAction(itens)
 
         except Exception as e:
-            GLib.idle_add(lambda: self._mostrar_erro(extension, f"Erro inesperado: {e}"))
+            return self._mostrar_erro(extension, f"Erro ao obter localização: {e}")
 
     def _mostrar_erro(self, extension, mensagem):
-        item = [
+        return RenderResultListAction([
             ExtensionResultItem(
-                icon=ICONE_ERRO,
+                icon="images/error.png",
                 name="❌ Erro ao obter localização",
                 description=mensagem,
                 on_enter=None
             )
-        ]
-        GLib.idle_add(lambda: extension.window.show_results(RenderResultListAction(item)))
+        ])
 
 
 if __name__ == "__main__":
