@@ -9,8 +9,7 @@ from ulauncher.api.shared.action.RenderResultListAction import RenderResultListA
 from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction
 from ulauncher.api.shared.action.OpenAction import OpenAction
 
-# Chaves API
-IPSTACK_KEY = "51adc2e31921227b91c2fc04190b174e"
+# Sua chave Google
 GOOGLE_API_KEY = "AIzaSyChY5KA-9Fgzz4o-hvhny0F1YKimAFrbzo"
 
 # Cache de 10 minutos
@@ -19,9 +18,7 @@ _last_timestamp = 0
 CACHE_TIMEOUT = 600  # segundos
 
 def extrair_cidade_estado_pais(geo_data):
-    """
-    Extrai cidade, estado e país do JSON da Google Geocoding API de forma robusta.
-    """
+    """Extrai cidade, estado e país do JSON do Google Maps de forma robusta."""
     cidade = estado = pais = None
     for result in geo_data.get("results", []):
         for comp in result.get("address_components", []):
@@ -37,7 +34,7 @@ def extrair_cidade_estado_pais(geo_data):
     return cidade, estado, pais
 
 
-class WhereAmIIPstackGoogle(Extension):
+class WhereAmIGoogle(Extension):
     def __init__(self):
         super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
@@ -52,24 +49,24 @@ class KeywordQueryEventListener(EventListener):
             return RenderResultListAction(_last_location)
 
         try:
-            # 1️⃣ Obter lat/lon via IPstack
-            url_ip = f"https://api.ipstack.com/check?access_key={IPSTACK_KEY}"
-            resp = requests.get(url_ip, timeout=5)
-            resp.raise_for_status()
-            ip_data = resp.json()
-            lat = ip_data.get("latitude")
-            lon = ip_data.get("longitude")
-            if lat is None or lon is None:
-                return self._mostrar_erro(extension, "Não foi possível obter latitude/longitude via IPstack")
-
-            # 2️⃣ Geocodificação reversa via Google Maps
-            url_geo = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
-            resp = requests.get(url_geo, timeout=5)
+            # 1️⃣ Google Maps Geolocation API
+            url_geo = f"https://www.googleapis.com/geolocation/v1/geolocate?key={GOOGLE_API_KEY}"
+            resp = requests.post(url_geo, json={"considerIp": True}, timeout=5)
             resp.raise_for_status()
             geo_data = resp.json()
+            loc = geo_data.get("location")
+            if not loc:
+                return self._mostrar_erro(extension, "Não foi possível obter lat/lon da Geolocation API")
+            lat = loc.get("lat")
+            lon = loc.get("lng")
 
-            cidade, estado, pais = extrair_cidade_estado_pais(geo_data)
+            # 2️⃣ Google Maps Geocoding API
+            url_rev = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
+            resp = requests.get(url_rev, timeout=5)
+            resp.raise_for_status()
+            geo_data_rev = resp.json()
 
+            cidade, estado, pais = extrair_cidade_estado_pais(geo_data_rev)
             if not cidade or not estado or not pais:
                 return self._mostrar_erro(extension, "Não foi possível extrair cidade/estado/país")
 
@@ -111,4 +108,4 @@ class KeywordQueryEventListener(EventListener):
 
 
 if __name__ == "__main__":
-    WhereAmIIPstackGoogle().run()
+    WhereAmIGoogle().run()
