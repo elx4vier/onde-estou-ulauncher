@@ -11,8 +11,7 @@ from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
 from ulauncher.api.shared.event import KeywordQueryEvent
 from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
-from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
-from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction
+from ulauncher.api.shared.action import RenderResultListAction, CopyToClipboardAction
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +33,20 @@ def create_session():
 
 
 class OndeEstouExtension(Extension):
+
     def __init__(self):
         super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
         self.session = create_session()
         self.cache = None
         self.cache_time = 0
+
+        # 📁 Caminho base da extensão
+        self.base_path = os.path.dirname(os.path.abspath(__file__))
+
+    def icon(self, filename):
+        path = os.path.join(self.base_path, "images", filename)
+        return path if os.path.exists(path) else ""
 
 
 class KeywordQueryEventListener(EventListener):
@@ -74,18 +81,15 @@ class KeywordQueryEventListener(EventListener):
     def fetch_location(self, extension):
         now = time.time()
 
-        # 🔥 Cache em memória
         if extension.cache and (now - extension.cache_time < CACHE_TTL):
             return extension.cache
 
-        # 💾 Cache em arquivo
         file_cache = self.load_file_cache()
         if file_cache:
             extension.cache = file_cache
             extension.cache_time = now
             return file_cache
 
-        # 🌍 API principal
         try:
             response = extension.session.get(
                 "https://ipapi.co/json/",
@@ -94,9 +98,8 @@ class KeywordQueryEventListener(EventListener):
             if response.status_code == 200:
                 geo = response.json()
             else:
-                raise Exception("Falha API 1")
+                raise Exception("API principal falhou")
         except Exception:
-            # 🔄 Fallback API alternativa
             try:
                 response = extension.session.get(
                     "http://ip-api.com/json/",
@@ -113,6 +116,13 @@ class KeywordQueryEventListener(EventListener):
         return geo
 
     def on_event(self, event, extension):
+
+        # 🔄 Loading imediato
+        loading_item = ExtensionResultItem(
+            icon=extension.icon("loading.png"),
+            name="Obtendo localização...",
+            description="Consultando serviço de geolocalização"
+        )
 
         try:
             geo = self.fetch_location(extension)
@@ -138,11 +148,11 @@ class KeywordQueryEventListener(EventListener):
                 f"{linha_estado}"
                 f"{pais} {bandeira}\n\n"
                 f"{linha_ip}"
-            )
+            ).strip()
 
-            rodape = "Fonte: ipapi.co | ip-api.com (fallback)"
+            rodape = "Fonte: ipapi.co | ip-api.com"
 
-            # 📋 Formato de cópia
+            # 📋 Formato cópia
             if copiar_formato == "cidade":
                 copia = cidade
             elif copiar_formato == "cidade_pais":
@@ -154,8 +164,8 @@ class KeywordQueryEventListener(EventListener):
 
             return RenderResultListAction([
                 ExtensionResultItem(
-                    icon='map-marker',
-                    name=texto.strip(),
+                    icon=extension.icon("icon.png"),
+                    name=texto,
                     description=rodape,
                     on_enter=CopyToClipboardAction(copia)
                 )
@@ -166,7 +176,7 @@ class KeywordQueryEventListener(EventListener):
 
             return RenderResultListAction([
                 ExtensionResultItem(
-                    icon='dialog-error',
+                    icon=extension.icon("error.png"),
                     name="Erro ao obter localização",
                     description="Offline ou serviço indisponível",
                     on_enter=CopyToClipboardAction("Erro")
