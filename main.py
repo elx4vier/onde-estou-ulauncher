@@ -1,5 +1,8 @@
 import logging
 import requests
+import threading
+import time
+
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
 from ulauncher.api.shared.event import KeywordQueryEvent
@@ -11,92 +14,118 @@ from ulauncher.api.shared.action.HideWindowAction import HideWindowAction
 
 logger = logging.getLogger(__name__)
 
+CACHE_TEMPO = 300  # 5 minutos
+
 class OndeEstouExtension(Extension):
+
     def __init__(self):
         super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
+        self.cache = None
+        self.cache_timestamp = 0
+
 
 class KeywordQueryEventListener(EventListener):
+
     def on_event(self, event, extension):
-        items = []
-        
-        try:
-            # Timeout reduzido para 2 segundos (evita espera longa)
-            response = requests.get('https://ipapi.co/json/', timeout=2)
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                cidade = data.get('city', 'Desconhecida')
-                regiao = data.get('region', 'Desconhecida')
-                pais = data.get('country_name', 'Desconhecido')
-                ip = data.get('ip', 'Desconhecido')
-                latitude = data.get('latitude', '')
-                longitude = data.get('longitude', '')
-                
-                localizacao = f"{cidade}, {regiao}, {pais}"
-                
-                # Item principal
-                items.append(ExtensionResultItem(
-                    icon='map-marker',
-                    name=f'📍 {localizacao}',
-                    description=f'IP: {ip} | Enter copia localização',
-                    on_enter=CopyToClipboardAction(localizacao)
-                ))
-                
-                # Coordenadas
-                items.append(ExtensionResultItem(
-                    icon='globe',
-                    name='Coordenadas aproximadas',
-                    description=f'Lat: {latitude}, Lon: {longitude} | Enter copia',
-                    on_enter=CopyToClipboardAction(f"{latitude}, {longitude}")
-                ))
-                
-                # Google Maps
-                if latitude and longitude:
-                    maps_url = f"https://www.google.com/maps?q={latitude},{longitude}"
-                    items.append(ExtensionResultItem(
-                        icon='maps',
-                        name='Abrir no Google Maps',
-                        description='Clique para ver no mapa',
-                        on_enter=OpenUrlAction(maps_url)
-                    ))
-            else:
-                # Erro HTTP (ex: 429, 500)
-                items.append(ExtensionResultItem(
+
+        # Se tiver cache válido, usa
+        if extension.cache and (time.time() - extension.cache_timestamp < CACHE_TEMPO):
+            return RenderResultListAction(extension.cache)
+
+        # Senão, busca em background
+        threading.Thread(
+            target=self.buscar_localizacao,
+            args=(extension,),
+            daemon=True
+        ).start()
+
+        return RenderResultListAction([
+            ExtensionResultItem(
+                icon='map-marker',
+                name='🔎 Obtendo localização...',
+                description='Aguarde um instante',
+                on_enter=HideWindowAction()
+            )
+        ])
+
+    def buscar_localizacao(self, extension):
+
+        headers = {
+            "User-Agent": "Ulauncher-OndeEstou"
+        }
+
+        apis = [
+            "https://ipapi.co/json/",
+            "http://ip-api.com/json/"
+        ]
+
+        data = None
+
+        for url in apis:
+            try:
+                response = requests.get(url, headers=headers, timeout=3)
+                if response.status_code == 200:
+                    data = response.json()
+                    break
+            except Exception as e:
+                logger.warning(f"Falha na API {url}: {e}")
+
+        if not data:
+            items = [
+                ExtensionResultItem(
                     icon='error',
-                    name='Erro na API',
-                    description=f'Código HTTP {response.status_code}',
+                    name='❌ Não foi possível obter localização',
+                    description='Verifique sua conexão',
                     on_enter=HideWindowAction()
-                ))
-                
-        except requests.exceptions.Timeout:
-            logger.error("Timeout na consulta à API")
-            items.append(ExtensionResultItem(
-                icon='error',
-                name='Tempo limite excedido',
-                description='A API demorou muito para responder',
-                on_enter=HideWindowAction()
-            ))
-        except requests.exceptions.ConnectionError:
-            logger.error("Erro de conexão")
-            items.append(ExtensionResultItem(
-                icon='error',
-                name='Sem conexão',
-                description='Verifique sua internet',
-                on_enter=HideWindowAction()
-            ))
-        except Exception as e:
-            logger.error(f"Erro inesperado: {e}")
-            items.append(ExtensionResultItem(
-                icon='error',
-                name='Erro inesperado',
-                description='Não foi possível obter localização',
-                on_enter=HideWindowAction()
-            ))
-        
-        # Sempre retorna algo (nunca fica vazio)
-        return RenderResultListAction(items)
+                )
+            ]
+            extension.publish_event(RenderResultListAction(items))
+            return
+
+        # Normalização dos dados (suporta duas APIs)
+        cidade = data.get('city', 'Desconhecida')
+        regiao = data.get('region') or data.get('regionName', 'Desconhecida')
+        pais = data.get('country_name') or data.get('country', 'Desconhecido')
+        ip = data.get('ip') or data.get('query', 'Desconhecido')
+        latitude = data.get('latitude') or data.get('lat', '')
+        longitude = data.get('longitude') or data.get('lon', '')
+
+        localizacao = f"{cidade}, {regiao}, {pais}"
+
+        items = [
+            ExtensionResultItem(
+                icon='map-marker',
+                name=f'📍 {localizacao}',
+                description=f'IP: {ip} | Enter copia',
+                on_enter=CopyToClipboardAction(localizacao)
+            ),
+            ExtensionResultItem(
+                icon='globe',
+                name='Coordenadas aproximadas',
+                description=f'Lat: {latitude}, Lon: {longitude}',
+                on_enter=CopyToClipboardAction(f"{latitude}, {longitude}")
+            )
+        ]
+
+        if latitude and longitude:
+            maps_url = f"https://www.google.com/maps?q={latitude},{longitude}"
+            items.append(
+                ExtensionResultItem(
+                    icon='maps',
+                    name='Abrir no Google Maps',
+                    description='Visualizar no mapa',
+                    on_enter=OpenUrlAction(maps_url)
+                )
+            )
+
+        # Salva cache
+        extension.cache = items
+        extension.cache_timestamp = time.time()
+
+        # Atualiza interface
+        extension.publish_event(RenderResultListAction(items))
+
 
 if __name__ == '__main__':
     OndeEstouExtension().run()
