@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 CACHE_TTL = 300  # 5 minutos
 
 
+# --------------------------------------------------
+# 🔥 Session otimizada com retry
+# --------------------------------------------------
 def create_session():
     session = requests.Session()
     retries = Retry(
@@ -76,18 +79,21 @@ class KeywordQueryEventListener(EventListener):
             copiar_formato = extension.preferences.get("formato_copia", "cidade_estado_pais")
             mostrar_ip = extension.preferences.get("mostrar_ip", "sim")
 
-            # 🇧🇷 Bandeira
+            # 🇧🇷 Bandeira dinâmica
             bandeira = self.flag(country_code) if mostrar_bandeira == "sim" else ""
 
+            # 🧱 Layout elegante
+            divisor = "────────────"
+
             linha_estado = f"{estado}\n" if estado and mostrar_estado == "sim" else ""
-            linha_ip = f"\nIP: {ip}" if ip and mostrar_ip == "sim" else ""
+            linha_ip = f"\n{divisor}\nIP: {ip}" if ip and mostrar_ip == "sim" else ""
 
             texto = (
-                "Você está em:\n\n"
+                "📍 Localização atual\n\n"
                 f"{cidade}\n"
                 f"{linha_estado}"
                 f"{country_code} {bandeira}"
-                f"{linha_ip}\n"
+                f"{linha_ip}"
             )
 
             rodape = "Fonte: ipapi.co | ip-api.com"
@@ -123,7 +129,9 @@ class KeywordQueryEventListener(EventListener):
                 )
             ])
 
+    # --------------------------------------------------
     # 🌍 Busca com fallback
+    # --------------------------------------------------
     def fetch_location(self, extension):
 
         try:
@@ -135,6 +143,9 @@ class KeywordQueryEventListener(EventListener):
             r = extension.session.get("http://ip-api.com/json/", timeout=2)
             return r.json()
 
+    # --------------------------------------------------
+    # 🇧🇷 Emoji de bandeira
+    # --------------------------------------------------
     def flag(self, code):
         if len(code) != 2:
             return ""
