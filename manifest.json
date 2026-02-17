@@ -1,6 +1,6 @@
 {
+    "required_api_version": "2",
     "manifest_version": "1",
-    "api_version": "2",
     "name": "Onde estou?",
     "description": "Mostra sua localização atual baseada no IP (cidade, estado e país)",
     "developer_name": "Xavier",
