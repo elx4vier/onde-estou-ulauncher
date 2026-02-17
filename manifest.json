@@ -1,9 +1,13 @@
 {
-    "name": "Onde estou?",
-    "description": "Mostra sua cidade, estado e país",
-    "developer_name": "Xavier",
-    "icon": "images/icon.png",
-    "keywords": ["Onde estou?"],
-    "launchers": ["keyword"]
+  "name": "Onde estou?",
+  "description": "Mostra sua cidade, estado e país e permite copiar",
+  "developer_name": "Xavier",
+  "icon": "images/icon.png",
+  "keywords": ["Onde estou?"],
+  "type": "python",
+  "entry_point": "main.py",
+  "required_api_version": "2.0.0",
+  "categories": ["Utilities"],
+  "preferences": [],
+  "launchers": ["keyword"]
 }
-
