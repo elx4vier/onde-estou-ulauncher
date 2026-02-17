@@ -21,8 +21,8 @@ class KeywordQueryEventListener(EventListener):
         items = []
         
         try:
-            # Consulta à API ipapi.co (não requer chave, limite 1000/dia)
-            response = requests.get('https://ipapi.co/json/', timeout=5)
+            # Timeout reduzido para 2 segundos (evita espera longa)
+            response = requests.get('https://ipapi.co/json/', timeout=2)
             
             if response.status_code == 200:
                 data = response.json()
@@ -30,51 +30,59 @@ class KeywordQueryEventListener(EventListener):
                 cidade = data.get('city', 'Desconhecida')
                 regiao = data.get('region', 'Desconhecida')
                 pais = data.get('country_name', 'Desconhecido')
-                codigo_pais = data.get('country_code', '')
                 ip = data.get('ip', 'Desconhecido')
                 latitude = data.get('latitude', '')
                 longitude = data.get('longitude', '')
                 
                 localizacao = f"{cidade}, {regiao}, {pais}"
                 
-                # Item principal: localização
+                # Item principal
                 items.append(ExtensionResultItem(
                     icon='map-marker',
                     name=f'📍 {localizacao}',
-                    description=f'IP: {ip} | Enter copia a localização',
+                    description=f'IP: {ip} | Enter copia localização',
                     on_enter=CopyToClipboardAction(localizacao)
                 ))
                 
-                # Item secundário: coordenadas
+                # Coordenadas
                 items.append(ExtensionResultItem(
                     icon='globe',
                     name='Coordenadas aproximadas',
-                    description=f'Lat: {latitude}, Lon: {longitude} | Enter copia as coordenadas',
+                    description=f'Lat: {latitude}, Lon: {longitude} | Enter copia',
                     on_enter=CopyToClipboardAction(f"{latitude}, {longitude}")
                 ))
                 
-                # Item para abrir no Google Maps (se tiver coordenadas)
+                # Google Maps
                 if latitude and longitude:
                     maps_url = f"https://www.google.com/maps?q={latitude},{longitude}"
                     items.append(ExtensionResultItem(
                         icon='maps',
                         name='Abrir no Google Maps',
-                        description='Clique para ver a localização aproximada no mapa',
+                        description='Clique para ver no mapa',
                         on_enter=OpenUrlAction(maps_url)
                     ))
             else:
+                # Erro HTTP (ex: 429, 500)
                 items.append(ExtensionResultItem(
                     icon='error',
-                    name='Erro na consulta',
+                    name='Erro na API',
                     description=f'Código HTTP {response.status_code}',
                     on_enter=HideWindowAction()
                 ))
                 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Erro de conexão: {e}")
+        except requests.exceptions.Timeout:
+            logger.error("Timeout na consulta à API")
             items.append(ExtensionResultItem(
                 icon='error',
-                name='Erro de conexão',
+                name='Tempo limite excedido',
+                description='A API demorou muito para responder',
+                on_enter=HideWindowAction()
+            ))
+        except requests.exceptions.ConnectionError:
+            logger.error("Erro de conexão")
+            items.append(ExtensionResultItem(
+                icon='error',
+                name='Sem conexão',
                 description='Verifique sua internet',
                 on_enter=HideWindowAction()
             ))
@@ -83,10 +91,11 @@ class KeywordQueryEventListener(EventListener):
             items.append(ExtensionResultItem(
                 icon='error',
                 name='Erro inesperado',
-                description='Ocorreu um erro interno',
+                description='Não foi possível obter localização',
                 on_enter=HideWindowAction()
             ))
         
+        # Sempre retorna algo (nunca fica vazio)
         return RenderResultListAction(items)
 
 if __name__ == '__main__':
