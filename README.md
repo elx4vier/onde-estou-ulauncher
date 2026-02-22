@@ -1,6 +1,7 @@
 # Where Am I? – Ulauncher Extension
 
 Quickly shows your location via IP (city, region, country, coordinates, IP).  
+![demo gif](images/whereami.gif)
 
 ---
 
